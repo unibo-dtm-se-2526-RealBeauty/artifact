@@ -1,6 +1,8 @@
 import json
 from flask import Flask, render_template, request, jsonify
-from artifact.database import init_db
+from artifact.database import init_db, save_analysis, get_history
+from artifact.beauty_api import get_product_by_barcode
+from artifact.analyzer import analyze_ingredients
 
 app = Flask(__name__, template_folder="../templates")
 init_db()
@@ -8,11 +10,6 @@ init_db()
 @app.route("/")
 def index():
     return render_template("index.html")
-
-from flask import request, jsonify
-from artifact.beauty_api import get_product_by_barcode
-from artifact.analyzer import analyze_ingredients
-from artifact.database import save_analysis
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -48,3 +45,16 @@ def analyze():
         "flagged": result["flagged"],
         "safe_highlights": result["safe_highlights"]
     })
+
+@app.route("/history")
+def history():
+    analyses = get_history()
+    return jsonify([{
+        "id": a.id,
+        "barcode": a.barcode,
+        "product_name": a.product_name,
+        "brand": a.brand,
+        "score": a.score,
+        "summary": a.summary,
+        "created_at": a.created_at.isoformat()
+    } for a in analyses])
