@@ -2,7 +2,7 @@ import json
 from flask import Flask, render_template, request, jsonify
 from artifact.database import init_db, save_analysis, get_history
 from artifact.beauty_api import get_product_by_barcode
-from artifact.analyzer import analyze_ingredients
+from artifact.analyzer import analyze_ingredients, extract_ingredients_from_image
 
 app = Flask(__name__, template_folder="../templates")
 init_db()
@@ -41,6 +41,30 @@ def analyze():
     return jsonify({
         "product_name": product_name,
         "brand": brand,
+        "score": result["score"],
+        "summary": result["summary"],
+        "flagged": result["flagged"],
+        "safe_highlights": result["safe_highlights"]
+    })
+
+@app.route("/analyze-photo", methods=["POST"])
+def analyze_photo():
+    photo = request.files.get("photo")
+    if not photo:
+        return jsonify({"error": "No photo provided"}), 400
+
+    image_bytes = photo.read()
+    ingredients_text = extract_ingredients_from_image(image_bytes)
+
+    if not ingredients_text:
+        return jsonify({"error": "Could not read ingredients from photo"}), 422
+
+    result = analyze_ingredients(ingredients_text)
+    save_analysis(None, "Photo Entry", "Unknown", ingredients_text, result)
+
+    return jsonify({
+        "product_name": "Photo Entry",
+        "brand": "Unknown",
         "score": result["score"],
         "summary": result["summary"],
         "flagged": result["flagged"],

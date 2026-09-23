@@ -39,10 +39,36 @@ Ingredient list:
 {ingredients_text}"""
 
     response = client.chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
         messages=[{"role": "user", "content": prompt}]
     )
 
     raw = response.choices[0].message.content
     clean = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(clean)
+
+import base64   # dosyanın en üstüne, diğer import'ların yanına ekle
+
+def extract_ingredients_from_image(image_bytes: bytes) -> str:
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+    response = client.chat.completions.create(
+        model="google/gemini-2.0-flash-exp:free",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "This image shows the ingredient list of a personal care product. Return ONLY the ingredient list as plain comma-separated text, with no explanation or extra formatting."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}
+                    }
+                ]
+            }
+        ]
+    )
+
+    return response.choices[0].message.content.strip()
