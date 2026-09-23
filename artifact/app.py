@@ -17,23 +17,24 @@ def analyze():
     barcode = data.get("barcode", "").strip()
     manual_ingredients = data.get("ingredients", "").strip()
 
+    product_name = "Manual Entry"
+    brand = "Unknown"
+    ingredients_text = manual_ingredients
+
     if barcode:
         product = get_product_by_barcode(barcode)
-        if not product:
-            return jsonify({"error": "Product not found"}), 404
-        ingredients_text = product["ingredients_text"]
-        product_name = product["name"]
-        brand = product["brand"]
-    elif manual_ingredients:
-        ingredients_text = manual_ingredients
-        product_name = "Manual Entry"
-        brand = "Unknown"
-    else:
-        return jsonify({"error": "Please provide a barcode or ingredients"}), 400
+        if product and product.get("ingredients_text"):
+            ingredients_text = product["ingredients_text"]
+            product_name = product["name"]
+            brand = product["brand"]
+        elif not manual_ingredients:
+            return jsonify({
+                "error": "not_found",
+                "message": "Ürün bulunamadı. Lütfen içerik listesini elle girin."
+            }), 404
 
     if not ingredients_text:
-        return jsonify({"error": "No ingredients found for this product"}), 404
-
+        return jsonify({"error": "Please provide a barcode or ingredients"}), 400
     result = analyze_ingredients(ingredients_text)
     save_analysis(barcode, product_name, brand, ingredients_text, result)
 
