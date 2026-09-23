@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RealBeauty</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f9f5f2; color: #333; }
+        header { background: #c2856a; color: white; padding: 20px 40px; }
+        header h1 { font-size: 1.8rem; }
+        header p { font-size: 0.95rem; opacity: 0.85; margin-top: 4px; }
+        .container { max-width: 720px; margin: 40px auto; padding: 0 20px; }
+        .card { background: white; border-radius: 12px; padding: 28px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+        input[type="text"], textarea { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-top: 8px; }
+        textarea { height: 100px; resize: vertical; }
+        button { margin-top: 14px; background: #c2856a; color: white; border: none; padding: 11px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #a96d55; }
+        .divider { text-align: center; color: #aaa; margin: 12px 0; font-size: 0.9rem; }
+        #result { display: none; }
+        .score-circle { width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: bold; color: white; margin: 0 auto 16px; }
+        .score-good { background: #5cb85c; }
+        .score-medium { background: #f0ad4e; }
+        .score-bad { background: #d9534f; }
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; margin-right: 4px; }
+        .high { background: #fde8e8; color: #c0392b; }
+        .medium { background: #fef3cd; color: #856404; }
+        .low { background: #e8f4fd; color: #1a6a99; }
+        .flagged-item { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+        .flagged-item:last-child { border-bottom: none; }
+        .safe-tag { background: #eafaf1; color: #1e8449; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; margin: 4px 2px; display: inline-block; }
+        #loading { display: none; text-align: center; color: #888; padding: 20px; }
+        #error { display: none; background: #fde8e8; color: #c0392b; padding: 12px; border-radius: 8px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🌿 RealBeauty</h1>
+        <p>Know what's really inside your personal care products</p>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h2>Analyze a Product</h2>
+            <label>Barcode</label>
+            <input type="text" id="barcode" placeholder="e.g. 8718951290006">
+            <div class="divider">— or paste ingredients manually —</div>
+            <textarea id="ingredients" placeholder="Aqua, Sodium Lauryl Sulfate, Glycerin..."></textarea>
+            <button onclick="analyze()">Analyze</button>
+            <div id="error"></div>
+        </div>
+
+        <div id="loading">⏳ Analyzing ingredients...</div>
+
+        <div class="card" id="result">
+            <h2 id="product-name"></h2>
+            <p id="brand" style="color:#888; margin-bottom:16px;"></p>
+            <div id="score-circle" class="score-circle"></div>
+            <p id="summary" style="text-align:center; margin-bottom:20px;"></p>
+
+            <h3>⚠️ Flagged Ingredients</h3>
+            <div id="flagged-list" style="margin: 12px 0;"></div>
+
+            <h3>✅ Safe Highlights</h3>
+            <div id="safe-list" style="margin-top: 10px;"></div>
+        </div>
+    </div>
+
+    <script>
+        async function analyze() {
+            const barcode = document.getElementById("barcode").value.trim();
+            const ingredients = document.getElementById("ingredients").value.trim();
+            const errorDiv = document.getElementById("error");
+            const loading = document.getElementById("loading");
+            const result = document.getElementById("result");
+
+            errorDiv.style.display = "none";
+            result.style.display = "none";
+            loading.style.display = "block";
+
+            try {
+                const res = await fetch("/analyze", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ barcode, ingredients })
+                });
+
+                const data = await res.json();
+                loading.style.display = "none";
+
+                if (!res.ok) {
+                    errorDiv.textContent = data.error || "Something went wrong.";
+                    errorDiv.style.display = "block";
+                    return;
+                }
+
+                document.getElementById("product-name").textContent = data.product_name;
+                document.getElementById("brand").textContent = data.brand;
+                document.getElementById("summary").textContent = data.summary;
+
+                const circle = document.getElementById("score-circle");
+                circle.textContent = data.score;
+                circle.className = "score-circle " + (data.score >= 70 ? "score-good" : data.score >= 40 ? "score-medium" : "score-bad");
+
+                const flaggedList = document.getElementById("flagged-list");
+                const sorted = [...data.flagged].sort((a, b) => {
+                    const order = {high: 0, medium: 1, low: 2};
+                    return order[a.severity] - order[b.severity];
+                });
+                flaggedList.innerHTML = sorted.length === 0 ? "<p style='color:#888'>No flagged ingredients 🎉</p>" :
+                    sorted.map(f => `
+                        <div class="flagged-item">
+                            <span class="badge ${f.severity}">${f.severity.toUpperCase()}</span>
+                            <strong>${f.name}</strong>
+                            <p style="font-size:0.9rem; color:#555; margin-top:4px;">${f.reason}</p>
+                        </div>`).join("");
+                        
+                const safeList = document.getElementById("safe-list");
+                safeList.innerHTML = data.safe_highlights.length === 0 ? "<p style='color:#888'>None identified</p>" :
+                    data.safe_highlights.map(s => `<span class="safe-tag">✓ ${s}</span>`).join("");
+
+                result.style.display = "block";
+            } catch (e) {
+                loading.style.display = "none";
+                errorDiv.textContent = "Network error. Please try again.";
+                errorDiv.style.display = "block";
+            }
+        }
+    </script>
+</body>
+</html>
