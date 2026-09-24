@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -9,6 +10,7 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("GEMINI_API_KEY")
 )
+
 
 def analyze_ingredients(ingredients_text: str) -> dict:
     prompt = f"""You are a cosmetic safety expert. Analyze the following personal care product ingredient list and return ONLY a JSON object, no explanation, no markdown.
@@ -40,20 +42,23 @@ Ingredient list:
 
     response = client.chat.completions.create(
         model="nvidia/nemotron-3-ultra-550b-a55b:free",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        timeout=45
     )
+
+    if not response.choices or response.choices[0].message.content is None:
+        raise RuntimeError("AI model returned an empty response. Please try again.")
 
     raw = response.choices[0].message.content
     clean = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(clean)
 
-import base64   # dosyanın en üstüne, diğer import'ların yanına ekle
 
 def extract_ingredients_from_image(image_bytes: bytes) -> str:
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
 
     response = client.chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         messages=[
             {
                 "role": "user",
@@ -68,7 +73,11 @@ def extract_ingredients_from_image(image_bytes: bytes) -> str:
                     }
                 ]
             }
-        ]
+        ],
+        timeout=45
     )
+
+    if not response.choices or response.choices[0].message.content is None:
+        raise RuntimeError("AI model returned an empty response. Please try again.")
 
     return response.choices[0].message.content.strip()

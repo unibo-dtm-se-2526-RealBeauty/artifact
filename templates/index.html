@@ -30,7 +30,46 @@
         .flagged-item:last-child { border-bottom: none; }
         .safe-tag { background: #eafaf1; color: #1e8449; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; margin: 4px 2px; display: inline-block; }
         #loading { display: none; text-align: center; color: #888; padding: 20px; }
+        #loading-timer { font-size: 0.85rem; color: #aaa; margin-top: 6px; }
+        .progress-track {
+            width: 100%;
+            max-width: 280px;
+            height: 6px;
+            background: #eee;
+            border-radius: 4px;
+            margin: 10px auto 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            width: 40%;
+            height: 100%;
+            background: #c2856a;
+            border-radius: 4px;
+            animation: indeterminate 1.3s infinite ease-in-out;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+        }
         #error { display: none; background: #fde8e8; color: #c0392b; padding: 12px; border-radius: 8px; margin-top: 12px; }
+        .photo-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .photo-row input[type="file"] { flex: 1; }
+        .clear-photo-btn {
+            display: none;
+            background: #eee;
+            color: #888;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            padding: 0;
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .clear-photo-btn:hover { background: #ddd; color: #555; }
     </style>
 </head>
 <body>
@@ -47,10 +86,22 @@
             <div class="divider">— or paste ingredients manually —</div>
             <textarea id="ingredients" placeholder="Aqua, Sodium Lauryl Sulfate, Glycerin..."></textarea>
             <button onclick="analyze()">Analyze</button>
+
+            <div class="divider">— or upload a photo of the label —</div>
+            <div class="photo-row">
+                <input type="file" id="photoInput" accept="image/*">
+                <button type="button" class="clear-photo-btn" id="clearPhotoBtn" onclick="clearPhoto()" title="Remove photo">✕</button>
+            </div>
+            <button onclick="analyzePhoto()">Analyze Photo</button>
+
             <div id="error"></div>
         </div>
 
-        <div id="loading">⏳ Analyzing ingredients...</div>
+        <div id="loading">
+            ⏳ Analyzing ingredients...
+            <div class="progress-track"><div class="progress-fill"></div></div>
+            <div id="loading-timer">0s elapsed — free AI models can take up to 45s</div>
+        </div>
 
         <div class="card" id="result">
             <h2 id="product-name"></h2>
@@ -67,6 +118,73 @@
     </div>
 
     <script>
+        const photoInput = document.getElementById("photoInput");
+        const clearPhotoBtn = document.getElementById("clearPhotoBtn");
+
+        photoInput.addEventListener("change", () => {
+            clearPhotoBtn.style.display = photoInput.files.length ? "block" : "none";
+        });
+
+        function clearPhoto() {
+            photoInput.value = "";
+            clearPhotoBtn.style.display = "none";
+        }
+
+        let loadingInterval = null;
+
+        function startLoadingTimer() {
+            let seconds = 0;
+            const timerEl = document.getElementById("loading-timer");
+            timerEl.textContent = "0s elapsed — free AI models can take up to 45s";
+            loadingInterval = setInterval(() => {
+                seconds++;
+                timerEl.textContent = `${seconds}s elapsed — free AI models can take up to 45s`;
+            }, 1000);
+        }
+
+        function stopLoadingTimer() {
+            if (loadingInterval) {
+                clearInterval(loadingInterval);
+                loadingInterval = null;
+            }
+        }
+
+        function clearAllInputs() {
+            document.getElementById("barcode").value = "";
+            document.getElementById("ingredients").value = "";
+            clearPhoto();
+        }
+
+        function displayResult(data) {
+            document.getElementById("product-name").textContent = data.product_name;
+            document.getElementById("brand").textContent = data.brand;
+            document.getElementById("summary").textContent = data.summary;
+
+            const circle = document.getElementById("score-circle");
+            circle.textContent = data.score;
+            circle.className = "score-circle " + (data.score >= 70 ? "score-good" : data.score >= 40 ? "score-medium" : "score-bad");
+
+            const flaggedList = document.getElementById("flagged-list");
+            const sorted = [...data.flagged].sort((a, b) => {
+                const order = {high: 0, medium: 1, low: 2};
+                return order[a.severity] - order[b.severity];
+            });
+            flaggedList.innerHTML = sorted.length === 0 ? "<p style='color:#888'>No flagged ingredients 🎉</p>" :
+                sorted.map(f => `
+                    <div class="flagged-item">
+                        <span class="badge ${f.severity}">${f.severity.toUpperCase()}</span>
+                        <strong>${f.name}</strong>
+                        <p style="font-size:0.9rem; color:#555; margin-top:4px;">${f.reason}</p>
+                    </div>`).join("");
+
+            const safeList = document.getElementById("safe-list");
+            safeList.innerHTML = data.safe_highlights.length === 0 ? "<p style='color:#888'>None identified</p>" :
+                data.safe_highlights.map(s => `<span class="safe-tag">✓ ${s}</span>`).join("");
+
+            document.getElementById("result").style.display = "block";
+            clearAllInputs();
+        }
+
         async function analyze() {
             const barcode = document.getElementById("barcode").value.trim();
             const ingredients = document.getElementById("ingredients").value.trim();
@@ -77,6 +195,7 @@
             errorDiv.style.display = "none";
             result.style.display = "none";
             loading.style.display = "block";
+            startLoadingTimer();
 
             try {
                 const res = await fetch("/analyze", {
@@ -86,41 +205,64 @@
                 });
 
                 const data = await res.json();
+                stopLoadingTimer();
                 loading.style.display = "none";
 
                 if (!res.ok) {
-                    errorDiv.textContent = data.error || "Something went wrong.";
+                    errorDiv.textContent = data.message || data.error || "Something went wrong.";
                     errorDiv.style.display = "block";
                     return;
                 }
 
-                document.getElementById("product-name").textContent = data.product_name;
-                document.getElementById("brand").textContent = data.brand;
-                document.getElementById("summary").textContent = data.summary;
-
-                const circle = document.getElementById("score-circle");
-                circle.textContent = data.score;
-                circle.className = "score-circle " + (data.score >= 70 ? "score-good" : data.score >= 40 ? "score-medium" : "score-bad");
-
-                const flaggedList = document.getElementById("flagged-list");
-                const sorted = [...data.flagged].sort((a, b) => {
-                    const order = {high: 0, medium: 1, low: 2};
-                    return order[a.severity] - order[b.severity];
-                });
-                flaggedList.innerHTML = sorted.length === 0 ? "<p style='color:#888'>No flagged ingredients 🎉</p>" :
-                    sorted.map(f => `
-                        <div class="flagged-item">
-                            <span class="badge ${f.severity}">${f.severity.toUpperCase()}</span>
-                            <strong>${f.name}</strong>
-                            <p style="font-size:0.9rem; color:#555; margin-top:4px;">${f.reason}</p>
-                        </div>`).join("");
-                        
-                const safeList = document.getElementById("safe-list");
-                safeList.innerHTML = data.safe_highlights.length === 0 ? "<p style='color:#888'>None identified</p>" :
-                    data.safe_highlights.map(s => `<span class="safe-tag">✓ ${s}</span>`).join("");
-
-                result.style.display = "block";
+                displayResult(data);
             } catch (e) {
+                stopLoadingTimer();
+                loading.style.display = "none";
+                errorDiv.textContent = "Network error. Please try again.";
+                errorDiv.style.display = "block";
+            }
+        }
+
+        async function analyzePhoto() {
+            const file = photoInput.files[0];
+            const errorDiv = document.getElementById("error");
+            const loading = document.getElementById("loading");
+            const result = document.getElementById("result");
+
+            errorDiv.style.display = "none";
+
+            if (!file) {
+                errorDiv.textContent = "Please select a photo first.";
+                errorDiv.style.display = "block";
+                return;
+            }
+
+            result.style.display = "none";
+            loading.style.display = "block";
+            startLoadingTimer();
+
+            const formData = new FormData();
+            formData.append("photo", file);
+
+            try {
+                const res = await fetch("/analyze-photo", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const data = await res.json();
+                stopLoadingTimer();
+                loading.style.display = "none";
+
+                if (!res.ok) {
+                    errorDiv.textContent = data.message || data.error || "Something went wrong.";
+                    errorDiv.style.display = "block";
+                    return;
+                }
+
+                displayResult(data);
+            } catch (e) {
+                stopLoadingTimer();
                 loading.style.display = "none";
                 errorDiv.textContent = "Network error. Please try again.";
                 errorDiv.style.display = "block";
